@@ -81,6 +81,7 @@ public class MultiMcMetadataProvider : LibraryMetadataProvider
     {
         var pathOptions = new[]
         {
+            _library.Launcher != null ? Path.Combine(_library.Launcher.DataDirectory, $"icons/{instanceCfg.IconKey}.png") : null,
             _library.Launcher != null ? Path.Combine(_library.Launcher.InstallDirectory, $"icons/{instanceCfg.IconKey}.png") : null,
             Path.Combine(MultiMcLibrary.AssemblyPath, $"icons/{instanceCfg.IconKey}.png"),
         };

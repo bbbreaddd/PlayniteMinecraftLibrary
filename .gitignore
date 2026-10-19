@@ -30,6 +30,9 @@ resources
 [Oo]bj/
 _UpgradeReport_Files/
 [Pp]ackages/
+Packed/
+dist/
+*.pext
 
 Thumbs.db
 Desktop.ini

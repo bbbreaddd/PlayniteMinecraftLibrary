@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -25,17 +25,17 @@ public abstract class BaseLauncher
     public abstract string Name { get; }
 
     /// <summary>
-    /// Path to MultiMC.exe or PolyMC.exe or PrismLauncher.exe
+    /// Path to MultiMC.exe or PolyMC.exe or PrismLauncher.exe or elyprismlauncher.exe
     /// </summary>
     public abstract string ExecutablePath { get; }
 
     /// <summary>
-    /// Path to multimc.cfg or polymc.cfg or prismlauncher.cfg
+    /// Path to multimc.cfg or polymc.cfg or prismlauncher.cfg or elyprismlauncher.cfg
     /// </summary>
     public abstract string ConfigPath { get; }
 
     /// <summary>
-    /// Name of the running process for MultiMC or PolyMC or PrismLauncher
+    /// Name of the running process for MultiMC or PolyMC or PrismLauncher or ElyPrismLauncher
     /// </summary>
     public abstract string ProcessName { get; }
 
@@ -109,6 +109,72 @@ public sealed class PrismLauncher : BaseLauncher
     }
 }
 
+public sealed class ElyPrismLauncher : BaseLauncher
+{
+    public override string Name => "ElyPrismLauncher";
+    public static string RelativeExecutablePath => "elyprismlauncher.exe";
+    public override string ExecutablePath
+    {
+        get
+        {
+            var defaultExe = Path.Combine(InstallDirectory, RelativeExecutablePath);
+            if (!File.Exists(defaultExe))
+            {
+                var pineconeExe = Path.Combine(InstallDirectory, "PineconeMC.exe");
+                if (File.Exists(pineconeExe))
+                {
+                    return pineconeExe;
+                }
+            }
+            return defaultExe;
+        }
+    }
+
+    public override string ConfigPath
+    {
+        get
+        {
+            var defaultCfg = Path.Combine(DataDirectory, "elyprismlauncher.cfg");
+            if (!File.Exists(defaultCfg))
+            {
+                var fallback = Path.Combine(DataDirectory, "prismlauncher.cfg");
+                if (File.Exists(fallback))
+                {
+                    return fallback;
+                }
+            }
+            return defaultCfg;
+        }
+    }
+
+    public override string ProcessName => Path.GetFileNameWithoutExtension(ExecutablePath);
+    public override string IconName => "icon-elyprismlauncher.png";
+    public override string DataDirectory { get; }
+
+    public ElyPrismLauncher(string installDirectory) : base(installDirectory)
+    {
+        var isPortable = File.Exists(Path.Combine(installDirectory, "portable.txt"));
+        if (isPortable)
+        {
+            DataDirectory = InstallDirectory;
+        }
+        else
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var elyPrismDir = Path.Combine(appData, "ElyPrismLauncher");
+            var pineconeDir = Path.Combine(appData, "PineconeMC");
+            if (!Directory.Exists(elyPrismDir) && Directory.Exists(pineconeDir))
+            {
+                DataDirectory = pineconeDir;
+            }
+            else
+            {
+                DataDirectory = elyPrismDir;
+            }
+        }
+    }
+}
+
 public class MultiMcLibrary : LibraryPlugin
 {
     internal static readonly string AssemblyPath = Path.GetDirectoryName(typeof(MultiMcLibrary).Assembly.Location) ?? ".";
@@ -120,7 +186,7 @@ public class MultiMcLibrary : LibraryPlugin
 
     public override Guid Id { get; } = Guid.Parse("6ab2531e-4800-404b-a938-4421b28a9f3e");
 
-    public override string Name => "MultiMC/PolyMC/Prism";
+    public override string Name => "MultiMC/PolyMC/Prism/ElyPrism";
 
     // Implementing Client adds ability to open it via special menu in playnite.
     public override LibraryClient Client { get; }
@@ -187,6 +253,11 @@ public class MultiMcLibrary : LibraryPlugin
         {
             Launcher = new PrismLauncher(rootFolder);
         }
+        else if (File.Exists(Path.Combine(rootFolder, ElyPrismLauncher.RelativeExecutablePath)) ||
+                 File.Exists(Path.Combine(rootFolder, "PineconeMC.exe")))
+        {
+            Launcher = new ElyPrismLauncher(rootFolder);
+        }
         else
         {
             Launcher = null;
@@ -239,18 +310,19 @@ public class MultiMcLibrary : LibraryPlugin
                 for (var i = 0; i < game.GameActions.Count; i++)
                 {
                     var gameAction = game.GameActions[i];
-                    switch (gameAction.Name)
+                    if (gameAction.Name == "Launch MultiMC" || gameAction.Name.StartsWith("Launch "))
                     {
-                        case "Launch MultiMC":
-                            game.GameActions[i] = new GameAction
-                            {
-                                Type = GameActionType.File,
-                                Path = Launcher.ExecutablePath,
-                                WorkingDir = Launcher.InstallDirectory,
-                                Name = $"Launch {Launcher.Name}",
-                            };
-                            changed = true;
-                            break;
+                        game.GameActions[i] = new GameAction
+                        {
+                            Type = GameActionType.File,
+                            Path = Launcher.ExecutablePath,
+                            WorkingDir = Launcher.InstallDirectory,
+                            Name = $"Launch {Launcher.Name}",
+                        };
+                        changed = true;
+                    }
+                    else switch (gameAction.Name)
+                    {
                         case "Open Minecraft Folder":
                             game.GameActions[i] = new GameAction
                             {
@@ -442,7 +514,7 @@ public class MultiMcLibrary : LibraryPlugin
                         Type = GameActionType.File,
                         Path = Launcher.ExecutablePath,
                         WorkingDir = Launcher.InstallDirectory,
-                        Name = "Launch MultiMC",
+                        Name = $"Launch {Launcher.Name}",
                     },
                     new() // Untested
                     {
@@ -521,7 +593,7 @@ public class MultiMcLibrary : LibraryPlugin
             Path = Launcher.ExecutablePath,
             Arguments = @$"--launch ""{GetFolderName(args.Game)}""",
             WorkingDir = Launcher.InstallDirectory,
-            Name = "Play with MultiMC"
+            Name = $"Play with {Launcher.Name}"
         };
     }
 
