@@ -1,4 +1,4 @@
-﻿using Playnite.SDK;
+using Playnite.SDK;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -14,10 +14,8 @@ public class MultiMcLibraryClient : LibraryClient
 
     private readonly MultiMcLibrary _multiMcLibrary;
 
-    private bool? _cachedIsInstalled;
     public override bool IsInstalled
-        => _cachedIsInstalled ?? _multiMcLibrary.Launcher is { ExecutablePath: {} }
-            && (_cachedIsInstalled = File.Exists(_multiMcLibrary.Launcher.ExecutablePath)).Value;
+        => _multiMcLibrary.Launcher is { ExecutablePath: { } path } && File.Exists(path);
 
     public override string Icon => Path.Combine(MultiMcLibrary.AssemblyPath, _multiMcLibrary.Launcher?.IconName ?? "icon-multimc.png");
 
@@ -41,7 +39,11 @@ public class MultiMcLibraryClient : LibraryClient
         }
         else
         {
-            Process.Start(_multiMcLibrary.Launcher.ExecutablePath);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _multiMcLibrary.Launcher.ExecutablePath,
+                WorkingDirectory = _multiMcLibrary.Launcher.InstallDirectory
+            });
         }
     }
 

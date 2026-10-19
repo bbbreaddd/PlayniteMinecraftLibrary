@@ -103,9 +103,19 @@ public sealed class PrismLauncher : BaseLauncher
     public PrismLauncher(string installDirectory) : base(installDirectory)
     {
         var isPortable = File.Exists(Path.Combine(installDirectory, "portable.txt"));
-        DataDirectory = isPortable
-            ? InstallDirectory
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrismLauncher"); // TODO test as admin
+        var userDataDir = Path.Combine(installDirectory, "UserData");
+        if (Directory.Exists(userDataDir))
+        {
+            DataDirectory = userDataDir;
+        }
+        else if (isPortable || File.Exists(Path.Combine(installDirectory, "prismlauncher.cfg")))
+        {
+            DataDirectory = InstallDirectory;
+        }
+        else
+        {
+            DataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrismLauncher"); // TODO test as admin
+        }
     }
 }
 
@@ -154,7 +164,12 @@ public sealed class ElyPrismLauncher : BaseLauncher
     public ElyPrismLauncher(string installDirectory) : base(installDirectory)
     {
         var isPortable = File.Exists(Path.Combine(installDirectory, "portable.txt"));
-        if (isPortable)
+        var userDataDir = Path.Combine(installDirectory, "UserData");
+        if (Directory.Exists(userDataDir))
+        {
+            DataDirectory = userDataDir;
+        }
+        else if (isPortable || File.Exists(Path.Combine(installDirectory, "elyprismlauncher.cfg")) || File.Exists(Path.Combine(installDirectory, "prismlauncher.cfg")))
         {
             DataDirectory = InstallDirectory;
         }
@@ -239,7 +254,17 @@ public class MultiMcLibrary : LibraryPlugin
 
     private void DetectLauncher()
     {
-        var rootFolder = Settings.MultiMcPath;
+        var rootFolder = Settings.MultiMcPath?.Trim(' ', '"') ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(rootFolder))
+        {
+            Launcher = null;
+            return;
+        }
+
+        if (File.Exists(rootFolder))
+        {
+            rootFolder = Path.GetDirectoryName(rootFolder) ?? rootFolder;
+        }
 
         if (File.Exists(Path.Combine(rootFolder, MultiMcLauncher.RelativeExecutablePath)))
         {
@@ -249,14 +274,14 @@ public class MultiMcLibrary : LibraryPlugin
         {
             Launcher = new PolyMcLauncher(rootFolder);
         }
-        else if (File.Exists(Path.Combine(rootFolder, PrismLauncher.RelativeExecutablePath)))
-        {
-            Launcher = new PrismLauncher(rootFolder);
-        }
         else if (File.Exists(Path.Combine(rootFolder, ElyPrismLauncher.RelativeExecutablePath)) ||
                  File.Exists(Path.Combine(rootFolder, "PineconeMC.exe")))
         {
             Launcher = new ElyPrismLauncher(rootFolder);
+        }
+        else if (File.Exists(Path.Combine(rootFolder, PrismLauncher.RelativeExecutablePath)))
+        {
+            Launcher = new PrismLauncher(rootFolder);
         }
         else
         {
@@ -418,10 +443,19 @@ public class MultiMcLibrary : LibraryPlugin
             return false;
         }
 
-        cfg = LoadCfgFile<InstanceCfg>(cfgPath);
-        pack = JsonConvert.DeserializeObject<MultiMcPack>(File.ReadAllText(packPath));
-
-        return pack != null;
+        try
+        {
+            cfg = LoadCfgFile<InstanceCfg>(cfgPath);
+            pack = JsonConvert.DeserializeObject<MultiMcPack>(File.ReadAllText(packPath));
+            return pack != null;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, $"Failed to load instance info for {instanceFolderName}");
+            cfg = default;
+            pack = default;
+            return false;
+        }
     }
 
     private string GetInstancesFolder()
@@ -434,7 +468,10 @@ public class MultiMcLibrary : LibraryPlugin
         // Currently this file is read once for every game, so that you don't need to restart Playnite if the config
         // changes. Could use something more sophisticated in the future.
         var multimcCfgPath = Launcher.ConfigPath;
-        return Path.GetFullPath(Path.Combine(Launcher.DataDirectory, LoadCfgFile<MultiMcCfg>(multimcCfgPath).InstanceDir));
+        var instanceDir = File.Exists(multimcCfgPath)
+            ? LoadCfgFile<MultiMcCfg>(multimcCfgPath).InstanceDir
+            : "instances";
+        return Path.GetFullPath(Path.Combine(Launcher.DataDirectory, instanceDir));
     }
 
     private static T LoadCfgFile<T>(string cfgPath) where T : class, new()
@@ -553,14 +590,28 @@ public class MultiMcLibrary : LibraryPlugin
 
         if (File.Exists(instgroupsPath))
         {
-            var instgroups = JsonConvert.DeserializeObject<InstanceGroups>(File.ReadAllText(instgroupsPath))!;
-
-            foreach (var (groupName, group) in instgroups.Groups)
+            try
             {
-                foreach (var folderName in group.Instances)
+                var instgroups = JsonConvert.DeserializeObject<InstanceGroups>(File.ReadAllText(instgroupsPath));
+                if (instgroups?.Groups != null)
                 {
-                    instanceList[folderName] = new GroupedInstance(groupName, folderName);
+                    foreach (var (groupName, group) in instgroups.Groups)
+                    {
+                        if (group?.Instances == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var folderName in group.Instances)
+                        {
+                            instanceList[folderName] = new GroupedInstance(groupName, folderName);
+                        }
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to load instgroups.json");
             }
         }
             
